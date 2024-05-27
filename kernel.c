@@ -51,9 +51,9 @@ void idt_init(void)
 	IDT[0x21].offset_higherbits = (keyboard_address & 0xffff0000) >> 16;
 
 	/*     Ports
-	 *	 PIC1	PIC2
-	 *Command 0x20	0xA0
-	 *Data	 0x21	0xA1
+	 *	 		PIC1	PIC2
+	 *Command 	0x20	0xA0
+	 *Data	 	0x21	0xA1
 	 */
 
 	/* ICW1 - begin initialization */
@@ -150,7 +150,7 @@ void keyboard_handler_main(void)
 
 void kmain(void)
 {
-	const char *str = "my first kernel with keyboard support";
+	const char *str = "Simple Kernel with Keyboard Support\n";
 	clear_screen();
 	kprint(str);
 	kprint_newline();
