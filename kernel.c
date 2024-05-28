@@ -14,6 +14,19 @@
 
 #define ENTER_KEY_CODE 0x1C
 
+#define PIC1_COMMAND_PORT 0x20
+#define PIC2_COMMAND_PORT 0xA0
+#define PIC1_DATA_PORT 0x21
+#define PIC2_DATA_PORT 0xA1
+
+#define ICW1_INIT 0x11
+#define ICW2_PIC1_OFFSET 0x20
+#define ICW2_PIC2_OFFSET 0x28
+#define ICW3_SETUP_CASCADING 0x00
+#define ICW4_ENV_INFO 0x01
+#define MASK_INTERRUPTS 0xff
+#define ENABLE_IRQ1 0xFD
+
 extern unsigned char keyboard_map[128];
 extern void keyboard_handler(void);
 extern char read_port(unsigned short port);
@@ -23,7 +36,7 @@ extern void load_idt(unsigned long *idt_ptr);
 /* current cursor location */
 unsigned int current_loc = 0;
 /* video memory begins at address 0xb8000 */
-char *vidptr = (char *)0xb8000;
+char *video_memory = (char *)0xb8000;
 
 struct IDT_entry
 {
@@ -50,36 +63,26 @@ void idt_init(void)
 	IDT[0x21].type_attr = INTERRUPT_GATE;
 	IDT[0x21].offset_higherbits = (keyboard_address & 0xffff0000) >> 16;
 
-	/*     Ports
-	 *	 		PIC1	PIC2
-	 *Command 	0x20	0xA0
-	 *Data	 	0x21	0xA1
-	 */
-
 	/* ICW1 - begin initialization */
-	write_port(0x20, 0x11);
-	write_port(0xA0, 0x11);
+	write_port(PIC1_COMMAND_PORT, ICW1_INIT);
+	write_port(PIC2_COMMAND_PORT, ICW1_INIT);
 
 	/* ICW2 - remap offset address of IDT */
-	/*
-	 * In x86 protected mode, we have to remap the PICs beyond 0x20 because
-	 * Intel have designated the first 32 interrupts as "reserved" for cpu exceptions
-	 */
-	write_port(0x21, 0x20);
-	write_port(0xA1, 0x28);
+	write_port(PIC1_DATA_PORT, ICW2_PIC1_OFFSET);
+	write_port(PIC2_DATA_PORT, ICW2_PIC2_OFFSET);
 
 	/* ICW3 - setup cascading */
-	write_port(0x21, 0x00);
-	write_port(0xA1, 0x00);
+	write_port(PIC1_DATA_PORT, ICW3_SETUP_CASCADING);
+	write_port(PIC2_DATA_PORT, ICW3_SETUP_CASCADING);
 
 	/* ICW4 - environment info */
-	write_port(0x21, 0x01);
-	write_port(0xA1, 0x01);
+	write_port(PIC1_DATA_PORT, ICW4_ENV_INFO);
+	write_port(PIC2_DATA_PORT, ICW4_ENV_INFO);
 	/* Initialization finished */
 
 	/* mask interrupts */
-	write_port(0x21, 0xff);
-	write_port(0xA1, 0xff);
+	write_port(PIC1_DATA_PORT, MASK_INTERRUPTS);
+	write_port(PIC2_DATA_PORT, MASK_INTERRUPTS);
 
 	/* fill the IDT descriptor */
 	idt_address = (unsigned long)IDT;
@@ -91,17 +94,17 @@ void idt_init(void)
 
 void kb_init(void)
 {
-	/* 0xFD is 11111101 - enables only IRQ1 (keyboard)*/
-	write_port(0x21, 0xFD);
+	/* enables only IRQ1 (keyboard)*/
+	write_port(PIC1_DATA_PORT, ENABLE_IRQ1);
 }
 
-void kprint(const char *str)
+void kprint(const char *message)
 {
 	unsigned int i = 0;
-	while (str[i] != '\0')
+	while (message[i] != '\0')
 	{
-		vidptr[current_loc++] = str[i++];
-		vidptr[current_loc++] = 0x07;
+		video_memory[current_loc++] = message[i++];
+		video_memory[current_loc++] = 0x07;
 	}
 }
 
@@ -116,8 +119,8 @@ void clear_screen(void)
 	unsigned int i = 0;
 	while (i < SCREENSIZE)
 	{
-		vidptr[i++] = ' ';
-		vidptr[i++] = 0x07;
+		video_memory[i++] = ' ';
+		video_memory[i++] = 0x07;
 	}
 }
 
@@ -127,7 +130,7 @@ void keyboard_handler_main(void)
 	char keycode;
 
 	/* write EOI */
-	write_port(0x20, 0x20);
+	write_port(PIC1_COMMAND_PORT, 0x20);
 
 	status = read_port(KEYBOARD_STATUS_PORT);
 	/* Lowest bit of status will be set if buffer is not empty */
@@ -143,16 +146,16 @@ void keyboard_handler_main(void)
 			return;
 		}
 
-		vidptr[current_loc++] = keyboard_map[(unsigned char)keycode];
-		vidptr[current_loc++] = 0x07;
+		video_memory[current_loc++] = keyboard_map[(unsigned char)keycode];
+		video_memory[current_loc++] = 0x07;
 	}
 }
 
 void kmain(void)
 {
-	const char *str = "Simple Kernel with Keyboard Support\n";
+	const char *welcome_message = "Simple Kernel with Keyboard Support\n";
 	clear_screen();
-	kprint(str);
+	kprint(welcome_message);
 	kprint_newline();
 	kprint_newline();
 
